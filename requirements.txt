@@ -1,0 +1,6 @@
+llama-cpp-python
+llama-cpp-agent
+newspaper4k
+httpx
+beautifulsoup4
+pydantic
