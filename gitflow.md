@@ -49,6 +49,7 @@
   # ... исправление багов, найденных QA на стейджинге ...
   # Слияние в main:
   git checkout main
+  git pull origin main
   git merge --no-ff release/v1.1.0
   git tag -a v1.1.0 -m "Release 1.1.0"
   # Слияние обратно в develop:
@@ -72,6 +73,7 @@
   # ... быстрое исправление бага ...
   # Слияние в main:
   git checkout main
+  git pull origin main
   git merge --no-ff hotfix/v1.1.1
   git tag -a v1.1.1 -m "Hotfix 1.1.1"
   # Слияние в develop:
