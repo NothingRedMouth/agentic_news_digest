@@ -32,7 +32,7 @@
   git checkout -b feature/PP-123
   # ... работа над задачей, коммиты ...
   git push origin feature/PP-123
-  # Создается Pull Request в ветку develop
+  # В веб-интерфейсе создается Pull Request в ветку develop
   ```
 
 ### 2. Ветки релизов (`release/*`)
@@ -46,17 +46,24 @@
   git checkout develop
   git pull origin develop
   git checkout -b release/v1.1.0
-  # ... исправление багов, найденных QA на стейджинге ...
-  # Слияние в main:
+  # ... отправка ветки на сервер для тестирования ...
+  git push origin release/v1.1.0
+  # ... исправление багов, найденных QA на стейджинге, коммиты, push ...
+  
+  # СЛИЯНИЕ И ЗАВЕРШЕНИЕ РЕЛИЗА:
+  # 1. В веб-интерфейсе создаются ДВА Pull Request из release/v1.1.0:
+  #    - Первый PR — в ветку main
+  #    - Второй PR — в ветку develop
+  # 2. После одобрения (апрувов) оба PR сливаются на сервере.
+  # 3. Локальная очистка и создание тега:
   git checkout main
   git pull origin main
-  git merge --no-ff release/v1.1.0
   git tag -a v1.1.0 -m "Release 1.1.0"
-  # Слияние обратно в develop:
-  git checkout develop
-  git merge --no-ff release/v1.1.0
-  # Удаление релизной ветки:
-  git branch -d release/v1.1.0
+  git push origin v1.1.0
+  
+  # Удаление локальной и удаленной релизной ветки:
+  git branch -D release/v1.1.0
+  git push origin --delete release/v1.1.0
   ```
 
 ### 3. Ветки исправлений (`hotfix/*`)
@@ -70,17 +77,23 @@
   git checkout main
   git pull origin main
   git checkout -b hotfix/v1.1.1
-  # ... быстрое исправление бага ...
-  # Слияние в main:
+  # ... быстрое исправление бага, коммит ...
+  git push origin hotfix/v1.1.1
+  
+  # СЛИЯНИЕ И ЗАВЕРШЕНИЕ ХОТФИКСА:
+  # 1. В веб-интерфейсе создаются ДВА Pull Request из hotfix/v1.1.1:
+  #    - Первый PR — в ветку main
+  #    - Второй PR — в ветку develop
+  # 2. После одобрения оба PR сливаются на сервере.
+  # 3. Локальная очистка и создание тега:
   git checkout main
   git pull origin main
-  git merge --no-ff hotfix/v1.1.1
   git tag -a v1.1.1 -m "Hotfix 1.1.1"
-  # Слияние в develop:
-  git checkout develop
-  git merge --no-ff hotfix/v1.1.1
-  # Удаление ветки хотфикса:
-  git branch -d hotfix/v1.1.1
+  git push origin v1.1.1
+  
+  # Удаление локальной и удаленной ветки хотфикса:
+  git branch -D hotfix/v1.1.1
+  git push origin --delete hotfix/v1.1.1
   ```
 
 ---
