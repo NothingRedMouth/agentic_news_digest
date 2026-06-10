@@ -24,14 +24,14 @@
 
 * **Откуда ответвляются:** `develop`
 * **Куда вливаются:** `develop`
-* **Именование:** `feature/PP-***-short-description` (где `PP-***` — ID задачи).
+* **Именование:** `feature/PP-123` (где `PP-123` — ID задачи).
 * **Жизненный цикл:**
   ```bash
   git checkout develop
   git pull origin develop
-  git checkout -b feature/PP-***
+  git checkout -b feature/PP-123
   # ... работа над задачей, коммиты ...
-  git push origin feature/PP-***
+  git push origin feature/PP-123
   # Создается Pull Request в ветку develop
   ```
 
