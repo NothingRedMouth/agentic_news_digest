@@ -4,3 +4,7 @@ newspaper4k
 httpx
 beautifulsoup4
 pydantic
+aiogram
+pydantic
+python-dotenv
+chromadb
