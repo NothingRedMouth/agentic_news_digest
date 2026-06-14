@@ -5,6 +5,10 @@ httpx
 beautifulsoup4
 pydantic
 aiogram
+telethon
 pydantic
 python-dotenv
 chromadb
+pytest
+pytest-mock
+pytest-asyncio
