@@ -75,12 +75,13 @@ class TelegramSearchNews(BaseModel):
                     
                     channel_posts.append({
                         "id": message.id,
+                        "channel": clean_channel,
                         "date": message.date.strftime("%Y-%m-%d %H:%M:%S"),
                         "text": text,
                         "link": link
                     })
                     
-                new_posts = db.save_posts(clean_channel, channel_posts)
+                new_posts = db.save_posts(channel_posts)
                 
                 total_posts_parsed += len(new_posts)
                 results[channel] = new_posts

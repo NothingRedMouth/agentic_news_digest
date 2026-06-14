@@ -15,20 +15,18 @@ class ChromaDBManager:
             name="telegram_news",
         )
 
-    def save_posts(self, channel_name, posts: list[dict[str, Any]]):
+    def save_posts(self, posts: list[dict[str, Any]]):
         """Сохраняет список постов в ChromaDB."""
         if not posts:
             return
-            
-        clean_channel = channel_name.lstrip('@')
 
         posts.sort(key=lambda x: x["date"])
         
-        ids = [f"{clean_channel}_{post['id']}" for post in posts]
+        ids = [f"{post["channel"]}_{post['id']}" for post in posts]
         documents = [post["text"] for post in posts]
         metadatas = [{
             "id": post["id"],
-            "channel": clean_channel,
+            "channel": post["channel"],
             "date": post["date"],
             "link": post["link"]
         } for post in posts]
