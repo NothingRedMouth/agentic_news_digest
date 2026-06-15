@@ -16,20 +16,14 @@ ENV FORCE_CMAKE=1
 ENV CMAKE_ARGS="-DGGML_CUDA=on"
 
 WORKDIR /app
-COPY requirements.txt .
-COPY main.py .
-COPY run.sh .
-
-RUN mkdir -p /app/models
+COPY . .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN chmod +x /app/run.sh
+RUN mkdir -p /app/configs /app/chroma_db /app/models /app/logs
 
-RUN echo "0 3 * * 0 root /app/run.sh >> /var/log/cron.log 2>&1" > /etc/cron.d/digest-cron \
-    && chmod 0644 /etc/cron.d/digest-cron \
-    && crontab /etc/cron.d/digest-cron
+EXPOSE 5672 15672
 
-RUN touch /var/log/cron.log
-
-CMD ["sh", "-c", "cron && tail -f /var/log/cron.log"]
+COPY run.sh /run.sh
+RUN chmod +x /run.sh
+ENTRYPOINT ["/run.sh"]

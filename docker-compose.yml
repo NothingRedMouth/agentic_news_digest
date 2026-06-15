@@ -1,0 +1,39 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: password
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+
+  app:
+    build: .
+    container_name: news-digest-app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      - rabbitmq
+    env_file:
+      - .env
+    environment:
+      RABBITMQ_HOST: rabbitmq
+    volumes:
+      - ./configs:/app/configs
+      - ./chroma_db:/app/chroma_db
+      - ./models:/app/models
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+volumes:
+  rabbitmq_data:
