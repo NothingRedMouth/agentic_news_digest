@@ -1,54 +1,61 @@
 import asyncio
 import json
-import pika
-from os import getenv
 import logging
+from os import getenv
+
+import aio_pika
 
 logger = logging.getLogger(__name__)
 
 RABBITMQ_HOST = getenv("RABBITMQ_HOST")
-RABBITMQ_PORT = int(getenv("RABBITMQ_PORT"))
+RABBITMQ_PORT = int(getenv("RABBITMQ_PORT", 5672))
 RABBITMQ_USER = getenv("RABBITMQ_USER")
 RABBITMQ_PASSWORD = getenv("RABBITMQ_PASSWORD")
 
 
-class AsyncConsumer:
-    def __init__(self, queue_name, callback, prefetch_count=1):
-        self.queue_name = queue_name
-        self.callback = callback
-        self.prefetch_count = prefetch_count
-        self._connection = None
-        self._channel = None
+async def run_worker(
+    queue_name: str, callback, prefetch_count: int = 1, dlx_name: str = None
+):
+    """
+    Запускает consumer с ручным подтверждением.
+    callback – асинхронная функция, принимающая один аргумент (словарь с данными).
+    При успешной обработке вызывается ack, при ошибке – nack с отправкой в DLX (если указан).
+    """
+    connection = await aio_pika.connect_robust(
+        host=RABBITMQ_HOST,
+        port=RABBITMQ_PORT,
+        login=RABBITMQ_USER,
+        password=RABBITMQ_PASSWORD,
+    )
+    channel = await connection.channel()
+    await channel.set_qos(prefetch_count=prefetch_count)
 
-    async def start(self):
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._sync_start)
-
-    def _sync_start(self):
-        credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
-        params = pika.ConnectionParameters(
-            host=RABBITMQ_HOST, port=RABBITMQ_PORT, credentials=credentials
+    if dlx_name:
+        await channel.declare_exchange(
+            dlx_name, type=aio_pika.ExchangeType.DIRECT, durable=True
         )
-        self._connection = pika.BlockingConnection(params)
-        self._channel = self._connection.channel()
-        self._channel.queue_declare(queue=self.queue_name, durable=True)
-        self._channel.basic_qos(prefetch_count=self.prefetch_count)
-        self._channel.basic_consume(
-            queue=self.queue_name, on_message_callback=self._on_message
-        )
-        try:
-            self._channel.start_consuming()
-        except KeyboardInterrupt:
-            self._channel.stop_consuming()
-            self._connection.close()
+        # Очередь для мёртвых сообщений
+        dlq_queue = await channel.declare_queue(f"{queue_name}.dlq", durable=True)
+        await dlq_queue.bind(dlx_name, routing_key="")
+        # Основная очередь с параметром x-dead-letter-exchange
+        args = {"x-dead-letter-exchange": dlx_name}
+        queue = await channel.declare_queue(queue_name, durable=True, arguments=args)
+    else:
+        queue = await channel.declare_queue(queue_name, durable=True)
 
-    def _on_message(self, ch, method, properties, body):
+    async def on_message(message: aio_pika.IncomingMessage):
         try:
-            data = json.loads(body)
-            asyncio.run_coroutine_threadsafe(
-                self.callback(data), asyncio.get_event_loop()
-            )
-            ch.basic_ack(delivery_tag=method.delivery_tag)
+            data = json.loads(message.body.decode())
+            await callback(data)
+            await message.ack()
+            logger.info(f"Сообщение обработано и подтверждено: {data}")
         except Exception as e:
-            logger.error(f"Ошибка обработки сообщения: {e}")
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+            logger.error(f"Ошибка обработки, отправляем в DLX (если настроен): {e}")
+            await message.nack(requeue=False)
+
+    await queue.consume(on_message)
+    logger.info(f"Consumer для очереди {queue_name} запущен. Ожидание сообщений...")
+    try:
+        await asyncio.Future()  # бесконечное ожидание
+    finally:
+        await connection.close()

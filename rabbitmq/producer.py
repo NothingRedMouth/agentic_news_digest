@@ -1,32 +1,34 @@
-import asyncio
 import json
-import pika
+import logging
 from os import getenv
 
+import aio_pika
+
+logger = logging.getLogger(__name__)
+
 RABBITMQ_HOST = getenv("RABBITMQ_HOST")
-RABBITMQ_PORT = int(getenv("RABBITMQ_PORT"))
+RABBITMQ_PORT = int(getenv("RABBITMQ_PORT", 5672))
 RABBITMQ_USER = getenv("RABBITMQ_USER")
 RABBITMQ_PASSWORD = getenv("RABBITMQ_PASSWORD")
 
 
 async def publish_digest_task():
     """Отправляет команду на запуск полного цикла дайджеста."""
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, _sync_publish)
-
-
-def _sync_publish():
-    credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
-    params = pika.ConnectionParameters(
-        host=RABBITMQ_HOST, port=RABBITMQ_PORT, credentials=credentials
+    connection = await aio_pika.connect_robust(
+        host=RABBITMQ_HOST,
+        port=RABBITMQ_PORT,
+        login=RABBITMQ_USER,
+        password=RABBITMQ_PASSWORD,
     )
-    conn = pika.BlockingConnection(params)
-    channel = conn.channel()
-    channel.queue_declare(queue="digest_tasks", durable=True)
-    channel.basic_publish(
-        exchange="",
-        routing_key="digest_tasks",
-        body=json.dumps({"action": "generate_digest"}),
-        properties=pika.BasicProperties(delivery_mode=2),
-    )
-    conn.close()
+    async with connection:
+        channel = await connection.channel()
+        # Объявляем очередь (на случай, если consumer ещё не запущен)
+        await channel.declare_queue("digest_tasks", durable=True)
+        await channel.default_exchange.publish(
+            aio_pika.Message(
+                body=json.dumps({"action": "generate_digest"}).encode(),
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+            ),
+            routing_key="digest_tasks",
+        )
+        logger.info("Задача на генерацию дайджеста опубликована")
