@@ -1,3 +1,4 @@
+import os
 import hashlib
 import time
 from typing import List, Dict
@@ -9,8 +10,8 @@ from os import getenv
 from newspaper import Article
 from db.chroma_db_manager import ChromaDBManager
 
-API_ID = 2040
-API_HASH = "b18441a1ff607e10a989891a5462e627"
+API_ID = os.getenv("TELEGRAM_API_ID")
+API_HASH = os.getenv("TELEGRAM_API_HASH")
 telegram_client = TelegramClient("session_agent", API_ID, API_HASH)
 
 
