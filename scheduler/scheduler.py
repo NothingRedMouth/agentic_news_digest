@@ -15,13 +15,15 @@ async def scheduled_digest():
 
 
 def setup_scheduler():
-    interval_days = int(getenv("DIGEST_INTERVAL_DAYS"))
+    interval_days = int(getenv("DIGEST_INTERVAL_DAYS", "0"))
     if interval_days > 0:
         scheduler.add_job(
             scheduled_digest,
             trigger=IntervalTrigger(days=interval_days),
             id="digest_job",
             replace_existing=True,
+            coalesce=True,
+            max_instances=1,
         )
         logger.info(f"Планировщик запущен: дайджест каждые {interval_days} дней")
     else:
