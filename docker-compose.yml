@@ -2,9 +2,7 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management
     container_name: rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+    network_mode: host
     environment:
       RABBITMQ_DEFAULT_USER: admin
       RABBITMQ_DEFAULT_PASS: password
@@ -15,6 +13,7 @@ services:
   app:
     build: .
     container_name: news-digest-app
+    network_mode: host
     deploy:
       resources:
         reservations:
@@ -26,8 +25,6 @@ services:
       - rabbitmq
     env_file:
       - .env
-    environment:
-      RABBITMQ_HOST: rabbitmq
     volumes:
       - ./configs:/app/configs
       - ./chroma_db:/app/chroma_db

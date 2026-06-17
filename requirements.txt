@@ -13,7 +13,11 @@ pytest-mock
 pytest-asyncio
 exa_py
 pika
+aio-pika
 openrouter
 requests
 pyyaml
 apscheduler
+aiofiles
+gspread
+oauth2client

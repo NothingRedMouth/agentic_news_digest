@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     git \
     ninja-build \
     cron \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 ENV GGML_CUDA=1
@@ -16,9 +17,12 @@ ENV FORCE_CMAKE=1
 ENV CMAKE_ARGS="-DGGML_CUDA=on"
 
 WORKDIR /app
-COPY . .
 
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt --break-system-packages
+
+COPY . .
 
 RUN mkdir -p /app/configs /app/chroma_db /app/models /app/logs
 
