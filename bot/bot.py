@@ -1,3 +1,4 @@
+import logging
 from os import getenv
 from pathlib import Path
 from aiogram.filters import Command
@@ -10,6 +11,8 @@ from json import load
 
 from bot.auth_ware import Authware
 from rabbitmq.producer import publish_digest_task
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_PATH = BASE_DIR / "configs" / "channels.json"
@@ -67,10 +70,17 @@ class NewsDigestBot:
         await message.answer(text)
 
     async def cmd_digest_now(self, message: Message):
-        await message.answer(
-            "Запрос принят! Задача на генерацию дайджеста поставлена в очередь."
-        )
-        await publish_digest_task()
+        logger.info(f"Команда /digest_now от {message.from_user.id}")
+        try:
+            await publish_digest_task()
+            await message.answer(
+                "✅ Запрос принят! Задача на генерацию дайджеста поставлена в очередь."
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при публикации задачи: {e}", exc_info=True)
+            await message.answer(
+                "❌ Ошибка: не удалось поставить задачу в очередь. Подробности в логах."
+            )
 
     async def start(self):
         print("Бот запущен и слушает команды...")
