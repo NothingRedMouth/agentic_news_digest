@@ -16,11 +16,6 @@ RABBITMQ_PASSWORD = getenv("RABBITMQ_PASSWORD")
 async def run_worker(
     queue_name: str, callback, prefetch_count: int = 1, dlx_name: str = None
 ):
-    """
-    Запускает consumer с ручным подтверждением.
-    callback – асинхронная функция, принимающая один аргумент (словарь с данными).
-    При успешной обработке вызывается ack, при ошибке – nack с отправкой в DLX (если указан).
-    """
     connection = await aio_pika.connect_robust(
         host=RABBITMQ_HOST,
         port=RABBITMQ_PORT,
@@ -34,10 +29,8 @@ async def run_worker(
         await channel.declare_exchange(
             dlx_name, type=aio_pika.ExchangeType.DIRECT, durable=True
         )
-        # Очередь для мёртвых сообщений
         dlq_queue = await channel.declare_queue(f"{queue_name}.dlq", durable=True)
         await dlq_queue.bind(dlx_name, routing_key="")
-        # Основная очередь с параметром x-dead-letter-exchange
         args = {"x-dead-letter-exchange": dlx_name}
         queue = await channel.declare_queue(queue_name, durable=True, arguments=args)
     else:
@@ -56,6 +49,6 @@ async def run_worker(
     await queue.consume(on_message)
     logger.info(f"Consumer для очереди {queue_name} запущен. Ожидание сообщений...")
     try:
-        await asyncio.Future()  # бесконечное ожидание
+        await asyncio.Future()
     finally:
         await connection.close()

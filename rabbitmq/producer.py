@@ -13,7 +13,6 @@ RABBITMQ_PASSWORD = getenv("RABBITMQ_PASSWORD")
 
 
 async def publish_digest_task():
-    """Отправляет команду на запуск полного цикла дайджеста."""
     connection = await aio_pika.connect_robust(
         host=RABBITMQ_HOST,
         port=RABBITMQ_PORT,
@@ -22,8 +21,8 @@ async def publish_digest_task():
     )
     async with connection:
         channel = await connection.channel()
-        # Объявляем очередь (на случай, если consumer ещё не запущен)
-        await channel.declare_queue("digest_tasks", durable=True)
+        args = {"x-dead-letter-exchange": "digest_tasks.dlx"}
+        await channel.declare_queue("digest_tasks", durable=True, arguments=args)
         await channel.default_exchange.publish(
             aio_pika.Message(
                 body=json.dumps({"action": "generate_digest"}).encode(),
