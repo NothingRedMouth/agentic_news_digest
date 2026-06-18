@@ -4,3 +4,4 @@ venv
 session_name.session
 __pycache__/
 chroma_db/
+credentials/
