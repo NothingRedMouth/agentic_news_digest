@@ -21,3 +21,5 @@ apscheduler
 aiofiles
 gspread
 oauth2client
+aiofiles
+aiosqlite
