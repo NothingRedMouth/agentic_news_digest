@@ -9,8 +9,9 @@ import aiofiles
 from telethon import TelegramClient
 from agent.llm_agent import LLMAgent
 from agent.tools import FetchArticle
-from rabbitmq.consumer import run_worker
+from rabbitmq.consumer import run_worker, unisender
 from utils.google_sheets_logger import get_global_logger
+from rabbitmq.producer import publish_email_task
 from configs.digest_config import (
     TELEGRAM_CHANNELS,
     DAYS_BACK,
@@ -40,10 +41,11 @@ def get_agent() -> LLMAgent:
     return _agent
 
 
-async def update_status(posts_count: int, error: str = None):
+async def update_status(posts_count: int, emails_count: int, error: str = None):
     status = {
         "last_run": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "posts_processed": posts_count,
+        "email_processed": emails_count,
         "error": error or "Ошибок нет",
     }
     async with aiofiles.open(STATUS_FILE, "w", encoding="utf-8") as f:
@@ -236,6 +238,36 @@ def generate_digest_html(top_articles: List[Dict], extra_articles: List[Dict]) -
     return "\n".join(lines)
 
 
+async def process_email_task(data: Dict):
+    """
+    Callback-обработчик для очереди 'email_digest'.
+    Делает до 3-х попыток отправки через Unisender.
+    """
+    subject = data.get("subject", "Новостной дайджест")
+    html_body = data.get("html_body", "")
+
+    max_retries = 3
+    last_error = ""
+
+    for attempt in range(1, max_retries + 1):
+        logger.info(f" Попытка массовой отправки email {attempt}/{max_retries}...")
+        res = await unisender.send_mass_digest(subject, html_body)
+
+        if res["success"]:
+            logger.info(f"🚀 Рассылка успешно запущена! Campaign ID: {res['campaign_id']}")
+            gs_logger.log(step="Email distribution success", status=f"Campaign {res['campaign_id']}")
+            return
+        else:
+            last_error = res.get("error", "Unknown error")
+            logger.warning(f"⚠️ Попытка {attempt} не удалась: {last_error}")
+            if attempt < max_retries:
+                await asyncio.sleep(2 ** attempt)
+
+    logger.error(f"❌ Не удалось отправить email-рассылку после {max_retries} попыток.")
+
+    raise Exception(f"Unisender API failed: {last_error}")
+
+
 async def process_digest_task(data: Dict):
     logger.info("Начинаем полный пайплайн дайджеста")
     agent = get_agent()
@@ -291,13 +323,19 @@ async def process_digest_task(data: Dict):
         await bot.bot.send_message(
             chat_id=target_channel, text=digest_html, parse_mode="HTML"
         )
-        gs_logger.log(step="Digest sent", status="OK")
-        await update_status(len(deduped))
+
+        current_date = datetime.now().strftime("%d.%m.%Y")
+        subject = f"🔥 ИИ-Дайджест новостей за {current_date}"
+        active_emails = await unisender.get_registered_emails()
+        await publish_email_task(digest_html=digest_html, subject=subject)
+        
+        gs_logger.log(step="Digest sent to TG & Email Queue", status="OK")
+        await update_status(len(deduped), len(active_emails))
 
     except Exception as e:
         logger.exception("Ошибка в пайплайне")
         gs_logger.log(step="Pipeline error", status=str(e))
-        await update_status(0, error=str(e))
+        await update_status(0, 0, error=str(e))
 
 
 async def start_worker():
@@ -306,4 +344,10 @@ async def start_worker():
         callback=process_digest_task,
         prefetch_count=1,
         dlx_name="digest_tasks.dlx",
+    )
+    await run_worker(
+        queue_name="email_digest",
+        callback=process_email_task,
+        prefetch_count=1,
+        dlx_name="email_digest.dlx",
     )
