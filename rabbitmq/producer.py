@@ -31,3 +31,43 @@ async def publish_digest_task():
             routing_key="digest_tasks",
         )
         logger.info("Задача на генерацию дайджеста опубликована")
+
+
+async def publish_email_task(digest_html: str, subject: str) -> bool:
+    """
+    Публикует одну глобальную задачу на массовую email-рассылку.
+    """
+    connection = await aio_pika.connect_robust(
+        host=RABBITMQ_HOST,
+        port=RABBITMQ_PORT,
+        login=RABBITMQ_USER,
+        password=RABBITMQ_PASSWORD,
+    )
+    async with connection:
+        channel = await connection.channel()
+        
+        dlx_exchange = await channel.declare_exchange("email_digest.dlx", type="direct", durable=True)
+        dlq = await channel.declare_queue("email_digest_dlq", durable=True)
+        await dlq.bind(dlx_exchange, routing_key="dead_letter")
+
+        args = {
+            "x-dead-letter-exchange": "email_digest.dlx",
+            "x-dead-letter-routing-key": "dead_letter"
+        }
+        await channel.declare_queue("email_digest", durable=True, arguments=args)
+
+        payload = {
+            "html_body": digest_html,
+            "subject": subject
+        }
+
+        await channel.default_exchange.publish(
+            aio_pika.Message(
+                body=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                content_type="application/json"
+            ),
+            routing_key="email_digest",
+        )
+        logger.info("Задача на массовую email-рассылку успешно опубликована в RabbitMQ.")
+        return True
