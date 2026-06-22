@@ -137,7 +137,6 @@ class NewsDigestBot:
 
     async def cmd_get_emails(self, message: Message):
         """Показать текущий привязанный email"""
-        email = await self.db.get_user_email(message.from_user.id)
         await message.answer("⏳ Запрашиваю список контактов из Unisender...")
     
         emails = await self.unisender.get_registered_emails()
@@ -153,6 +152,5 @@ class NewsDigestBot:
         await message.answer(text)
 
     async def start(self):
-        await self.db.init_db()
         print("Бот запущен и слушает команды...")
         await self.dp.start_polling(self.bot)
