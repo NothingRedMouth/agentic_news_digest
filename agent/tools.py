@@ -9,9 +9,6 @@ from exa_py import Exa
 from os import getenv
 from newspaper import Article
 from db.chroma_db_manager import ChromaDBManager
-from dotenv import load_dotenv
-
-load_dotenv()
 
 API_ID = os.getenv("TELEGRAM_API_ID")
 API_HASH = os.getenv("TELEGRAM_API_HASH")
