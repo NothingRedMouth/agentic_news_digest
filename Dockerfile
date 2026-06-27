@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     ninja-build \
     cron \
     curl \
+    dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
 ENV GGML_CUDA=1
@@ -29,5 +30,5 @@ RUN mkdir -p /app/configs /app/chroma_db /app/models /app/logs
 EXPOSE 5672 15672
 
 COPY run.sh /run.sh
-RUN chmod +x /run.sh
+RUN dos2unix /run.sh && chmod +x /run.sh
 ENTRYPOINT ["/run.sh"]
