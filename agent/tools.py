@@ -9,6 +9,9 @@ from exa_py import Exa
 from os import getenv
 from newspaper import Article
 from db.chroma_db_manager import ChromaDBManager
+from dotenv import load_dotenv
+
+load_dotenv()
 
 API_ID = os.getenv("TELEGRAM_API_ID")
 API_HASH = os.getenv("TELEGRAM_API_HASH")
@@ -36,7 +39,7 @@ class RelevanceCache:
 
 
 class TelegramSearch:
-    def __init__(self, channels: List[str], max_per_channel=10, search_days=2):
+    def __init__(self, channels: List[str], max_per_channel=10, search_days=10):
         self.channels = channels
         self.max_per_channel = max_per_channel
         self.time_threshold = datetime.now(timezone.utc) - timedelta(days=search_days)
