@@ -1,3 +1,4 @@
+import asyncio
 import aiohttp
 import logging
 from typing import Any, Dict, List
@@ -35,7 +36,7 @@ class UnisenderClient:
         data = {
             "list_ids": str(self.list_id),
             "fields[email]": email,
-            "double_optin": "0",
+            "double_optin": "4",
             "overwrite": "1"
         }
         return await self._make_request("subscribe", data)
@@ -49,32 +50,23 @@ class UnisenderClient:
         }
         return await self._make_request("unsubscribe", data)
     
-    async def get_registered_emails(self) -> List[str]:
+    async def check_email_in_unisender_list(self, email: str):
         """
-        Получение списка ВСЕХ активных email-адресов из конкретного списка рассылки.
-        Использует метод API exportContacts.
+        Проверка конкретного email, находится ли он в списке
         """
         data = {
-            "list_id": str(self.list_id),
-            "field_names[0]": "email",
-            "field_names[1]": "email_status"
+            "email": email,
+            "list_ids": str(self.list_id),
+            "condition": "and"
         }
-        
-        res = await self._make_request("exportContacts", data)
+        res = await self._make_request("isContactInLists", data)
         if not res["success"]:
-            logger.error(f"Не удалось выгрузить контакты: {res.get('error')}")
-            return []
+            logger.error(f"Не удалось проверить контакт: {res.get('error')}")
+            return "error"
         
-        raw_data = res["result"].get("data", [])
-        
-        active_emails = []
-        for row in raw_data:
-            if len(row) >= 2:
-                email, status = row[0], row[1]
-                if status == "active":
-                    active_emails.append(email)
-                    
-        return active_emails
+        if res["result"]:
+            return "True"
+        return "False"
     
     async def send_mass_digest(self, subject: str, html_body: str) -> Dict[str, Any]:
         """
@@ -115,3 +107,97 @@ class UnisenderClient:
             "campaign_id": campaign_res["result"]["campaign_id"], 
             "status": campaign_res["result"]["status"]
         }
+
+    async def get_registered_emails(self) -> List[str]:
+        """
+        Получение списка ВСЕХ активных email-адресов из конкретного списка рассылки.
+        Использует метод API exportContacts.
+        """
+        data = {
+            "list_id": str(self.list_id),
+            "field_names[0]": "email",
+            "field_names[1]": "email_status"
+        }
+        
+        logger.info("Запуск фоновой задачи экспорта контактов в Unisender...")
+        res = await self._make_request("async/exportContacts", data)
+        
+        if not res["success"]:
+            logger.error(f"Не удалось запустить экспорт контактов: {res.get('error')}")
+            return []
+            
+        task_uuid = res["result"].get("task_uuid")
+        if not task_uuid:
+            logger.error("Unisender не вернул task_uuid для задачи экспорта")
+            return []
+            
+        logger.info(f"Задача экспорта успешно создана. Task UUID: {task_uuid}. Начинаем опрос статуса...")
+        
+        file_url = None
+        max_attempts = 15 
+        
+        async with aiohttp.ClientSession() as session:
+            for attempt in range(max_attempts):
+                await asyncio.sleep(2)
+                
+                status_data = {
+                    "format": "json",
+                    "api_key": self.api_key,
+                    "task_uuid": task_uuid
+                }
+                status_url = f"{self.base_url}/async/getTaskResult"
+                
+                try:
+                    async with session.post(status_url, data=status_data) as response:
+                        if response.status != 200:
+                            continue
+                        res_json = await response.json()
+                        task_result = res_json.get("result", {})
+                        status = task_result.get("status")
+                        
+                        if status == "completed":
+                            file_url = task_result.get("file_to_download")
+                            break
+                        elif status in ["new", "processing"]:
+                            logger.info(f"Файл подготавливается Unisender (попытка {attempt + 1})...")
+                            continue
+                        else:
+                            logger.error(f"Ошибка выполнения задачи экспорта. Статус: {status}")
+                            return []
+                except Exception as e:
+                    logger.error(f"Исключение при проверке статуса задачи {task_uuid}: {e}")
+                    return []
+                    
+            if not file_url:
+                logger.error("Превышено время ожидания готовности файла экспорта.")
+                return []
+                
+            logger.info("Файл готов. Начинаем скачивание и парсинг данных...")
+            try:
+                async with session.get(file_url) as response:
+                    if response.status != 200:
+                        logger.error(f"Не удалось скачать файл экспорта: HTTP {response.status}")
+                        return []
+                        
+                    file_text = await response.text(encoding="utf-8")
+                    lines = file_text.strip().splitlines()
+                    
+                    active_emails = []
+                    if not lines or len(lines) < 2:
+                        return []
+                        
+                    header = lines[0]
+                    delimiter = ";" if ";" in header else ("," if "," in header else "\t")
+                    
+                    for line in lines[1:]:
+                        row = line.replace('"', '').split(delimiter)
+                        if len(row) >= 2:
+                            email = row[0].strip()
+                            status = row[1].strip()
+                            if status == "active":
+                                active_emails.append(email)
+                                
+                    return active_emails
+            except Exception as e:
+                logger.error(f"Ошибка при обработке файла результатов Unisender: {e}")
+                return []
