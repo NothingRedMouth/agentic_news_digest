@@ -8,14 +8,14 @@ from typing import List, Dict, Optional
 import aiofiles
 from telethon import TelegramClient
 from agent.llm_agent import LLMAgent
-from agent.tools import FetchArticle
+from agent.tools import FetchArticle, TelegramSearch
 from rabbitmq.consumer import run_worker, unisender
 from utils.google_sheets_logger import get_global_logger
 from rabbitmq.producer import publish_email_task
 from configs.digest_config import (
+    MAX_POSTS_PER_CHANNEL,
     TELEGRAM_CHANNELS,
     DAYS_BACK,
-    MAX_POSTS_PER_CHANNEL,
     KEYWORDS,
     CATEGORIES,
     MAX_TOP_ARTICLES,
@@ -69,31 +69,6 @@ def is_older_than_days(date_str: str, days: int) -> bool:
 def filter_by_keywords(text: str) -> bool:
     text_lower = text.lower()
     return any(kw.lower() in text_lower for kw in KEYWORDS)
-
-
-async def fetch_posts_from_telegram() -> List[Dict]:
-    await client.connect()
-    time_threshold = datetime.now(timezone.utc) - timedelta(days=DAYS_BACK)
-    all_posts = []
-    for channel in TELEGRAM_CHANNELS:
-        try:
-            async for msg in client.iter_messages(channel, limit=MAX_POSTS_PER_CHANNEL):
-                if msg.date < time_threshold:
-                    break
-                text = msg.text or msg.caption
-                if text:
-                    all_posts.append(
-                        {
-                            "channel": channel,
-                            "date": msg.date.strftime("%Y-%m-%d %H:%M:%S"),
-                            "text": text,
-                        }
-                    )
-        except Exception as e:
-            logger.error(f"Ошибка получения канала {channel}: {e}")
-            gs_logger.log(step="Telegram fetch error", channel=channel, status=str(e))
-    await client.disconnect()
-    return all_posts
 
 
 def extract_and_deduplicate_links(posts: List[Dict]) -> List[Dict]:
@@ -251,6 +226,7 @@ async def process_email_task(data: Dict):
 
     for attempt in range(1, max_retries + 1):
         logger.info(f" Попытка массовой отправки email {attempt}/{max_retries}...")
+        gs_logger.log(step="Email sending start", status=str(f"Compain start"))
         res = await unisender.send_mass_digest(subject, html_body)
 
         if res["success"]:
@@ -264,6 +240,7 @@ async def process_email_task(data: Dict):
                 await asyncio.sleep(2 ** attempt)
 
     logger.error(f"❌ Не удалось отправить email-рассылку после {max_retries} попыток.")
+    gs_logger.log(step="Processing error", status=str(f"❌ Compain crashed after {max_retries} attempts."))
 
     raise Exception(f"Unisender API failed: {last_error}")
 
@@ -271,15 +248,15 @@ async def process_email_task(data: Dict):
 async def process_digest_task(data: Dict):
     logger.info("Начинаем полный пайплайн дайджеста")
     agent = get_agent()
-
+    searcher = TelegramSearch(TELEGRAM_CHANNELS, MAX_POSTS_PER_CHANNEL, DAYS_BACK)
     try:
-        posts = await fetch_posts_from_telegram()
+        posts = await searcher.run()
         gs_logger.log(step="Posts fetched", status=f"Count {len(posts)}")
         unique_links = extract_and_deduplicate_links(posts)
         gs_logger.log(step="Links extracted", status=f"Unique {len(unique_links)}")
         if not unique_links:
             logger.info("Нет ссылок для обработки")
-            await update_status(0)
+            await update_status(0, 0)
             return
 
         sem = asyncio.Semaphore(MAX_CONCURRENT_FETCHES)
@@ -301,7 +278,7 @@ async def process_digest_task(data: Dict):
 
         if not processed:
             logger.info("Нет статей, прошедших обработку")
-            await update_status(0)
+            await update_status(posts_count=0, emails_count=0)
             return
 
         deduped = await remove_semantic_duplicates(processed, agent)
@@ -318,7 +295,7 @@ async def process_digest_task(data: Dict):
         target_channel = bot.target_channel_id
         if not target_channel:
             logger.error("TELEGRAM_CHANNEL_ID не задан, отправка невозможна")
-            await update_status(len(deduped), error="TELEGRAM_CHANNEL_ID отсутствует")
+            await update_status(len(deduped), 0, error="TELEGRAM_CHANNEL_ID отсутствует")
             return
         await bot.bot.send_message(
             chat_id=target_channel, text=digest_html, parse_mode="HTML"

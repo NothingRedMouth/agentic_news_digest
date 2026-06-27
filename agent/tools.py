@@ -36,7 +36,7 @@ class RelevanceCache:
 
 
 class TelegramSearch:
-    def __init__(self, channels: List[str], max_per_channel=10, search_days=2):
+    def __init__(self, channels: List[str], max_per_channel=10, search_days=7):
         self.channels = channels
         self.max_per_channel = max_per_channel
         self.time_threshold = datetime.now(timezone.utc) - timedelta(days=search_days)
