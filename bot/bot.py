@@ -136,11 +136,11 @@ class NewsDigestBot:
             await message.answer(
                 "❌ Использование: <code>/unsubscribe_email test@example.com</code>"
             )
+
             return
 
         email = command.args.strip().lower()
         await message.answer("⏳ Удаление контакта из Unisender...")
-
         res = await self.unisender.unsubscribe(email)
 
         if res["success"]:
@@ -188,6 +188,7 @@ class NewsDigestBot:
             await message.answer(
                 "📋 В списке рассылки Unisender нет активных подписчиков (или они ещё не обработаны)."
             )
+
             return
 
         header_text = f"📋 <b>Всего активных подписчиков: {len(emails)}</b>\n\n"

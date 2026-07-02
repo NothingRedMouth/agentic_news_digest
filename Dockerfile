@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     ninja-build \
     cron \
     curl \
+    dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

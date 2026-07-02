@@ -2,8 +2,9 @@ import asyncio
 import json
 import logging
 from os import getenv
-
 import aio_pika
+
+from utils.unisender_client import UnisenderClient
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +12,13 @@ RABBITMQ_HOST = getenv("RABBITMQ_HOST")
 RABBITMQ_PORT = int(getenv("RABBITMQ_PORT", 5672))
 RABBITMQ_USER = getenv("RABBITMQ_USER")
 RABBITMQ_PASSWORD = getenv("RABBITMQ_PASSWORD")
+
+unisender = UnisenderClient(
+    api_key=getenv("UNISENDER_API_KEY", ""),
+    sender_email=getenv("UNISENDER_SENDER_EMAIL", ""),
+    sender_name=getenv("UNISENDER_SENDER_NAME", ""),
+    list_id=int(getenv("UNISENDER_LIST_ID"))
+)
 
 
 async def run_worker(

@@ -1,10 +1,10 @@
-import asyncio
 import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
 import aiofiles
+import asyncio
 import markdown
 from agent.llm_agent import LLMAgent
 from agent.tools import FetchArticle, FetchTelegramPost, telegram_client
@@ -180,7 +180,6 @@ async def process_email_task(data: Dict):
 async def process_digest_task(data: Dict):
     logger.info("Начинаем упрощённый пайплайн дайджеста")
     agent = get_agent()
-
     await telegram_client.connect()
     try:
         posts = await fetch_posts_from_telegram()
@@ -275,6 +274,7 @@ async def process_digest_task(data: Dict):
             await update_status(
                 len(all_sources), error="TELEGRAM_CHANNEL_ID отсутствует"
             )
+
             return
 
         telegraph_url = await publish_to_telegraph(
