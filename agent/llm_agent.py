@@ -1,20 +1,11 @@
 import asyncio
-import json
 import logging
 from os import getenv
-from typing import List, Optional
+from typing import List, Dict
 import aiohttp
-from llama_cpp import Llama, LlamaGrammar
-from .tools import RelevanceCache
 import yaml
 from pathlib import Path
 from utils.google_sheets_logger import get_global_logger
-from configs.grammars import (
-    boolean_grammar,
-    category_grammar,
-    significance_grammar,
-    duplicate_groups_grammar,
-)
 
 logger = logging.getLogger(__name__)
 gs_logger = get_global_logger()
@@ -22,184 +13,193 @@ gs_logger = get_global_logger()
 
 class LLMAgent:
     def __init__(self):
-        self.openrouter_api_key = getenv("OPENROUTER_API_KEY")
-        self.openrouter_model = getenv("OPENROUTER_MODEL")
-        self.openrouter_timeout = int(getenv("OPENROUTER_TIMEOUT", 30))
-        self.openrouter_max_tokens = int(getenv("OPENROUTER_MAX_TOKENS", 20000))
-        self.local_model_path = getenv("LOCAL_MODEL_PATH")
-        self.llm_preference = getenv("LLM_PREFERENCE", "openrouter").lower()
-        if self.llm_preference not in ("openrouter", "openrouter_only", "local"):
+        self.external_api_key = getenv("EXTERNAL_API_KEY")
+        self.external_model = getenv("EXTERNAL_MODEL")
+        self.external_timeout = int(getenv("EXTERNAL_TIMEOUT", 60))
+        self.external_max_tokens = int(getenv("EXTERNAL_MAX_TOKENS", 30000))
+        self.external_api_base_url = getenv(
+            "EXTERNAL_API_BASE_URL", "https://openrouter.ai/api/v1"
+        )
+
+        self.local_server_url = getenv("LOCAL_LLM_SERVER_URL", "http://localhost:8080")
+        self.local_server_timeout = int(getenv("LOCAL_LLM_TIMEOUT", 300))
+        self.local_max_tokens = int(getenv("LOCAL_LLM_MAX_TOKENS", 30000))
+        self.local_retries = int(getenv("LOCAL_LLM_RETRIES", 3))
+        self.repeat_penalty = float(getenv("LOCAL_LLM_REPEAT_PENALTY", "1.1"))
+        self.stop_tokens = (
+            getenv("LOCAL_LLM_STOP", "").split(",") if getenv("LOCAL_LLM_STOP") else []
+        )
+        self.local_available = bool(self.local_server_url.strip())
+
+        self.llm_preference = getenv("LLM_PREFERENCE", "external").lower()
+        if self.llm_preference not in ("external", "external_only", "local"):
             logger.warning(
-                f"Некорректное LLM_PREFERENCE={self.llm_preference}, используем 'openrouter'"
+                f"Некорректное LLM_PREFERENCE={self.llm_preference}, используем 'external'"
             )
-            self.llm_preference = "openrouter"
+            self.llm_preference = "external"
 
-        self.local_llm = None
-        if self.llm_preference == "local" or (
-            self.llm_preference in ("openrouter", "openrouter_only")
-            and self.local_model_path
-        ):
-            try:
-                logger.info("Загружаем локальную модель...")
-                self.local_llm = Llama(
-                    model_path=self.local_model_path, n_ctx=15000, n_gpu_layers=50
-                )
-                logger.info("Локальная модель загружена")
-            except Exception as e:
-                logger.error(f"Не удалось загрузить локальную модель: {e}")
-                if self.llm_preference == "local":
-                    raise RuntimeError(
-                        "LLM_PREFERENCE=local, но локальная модель не загружена"
-                    )
+        if self.llm_preference == "local" and not self.local_available:
+            raise RuntimeError(
+                "LLM_PREFERENCE=local, но LOCAL_LLM_SERVER_URL не задан или пуст"
+            )
 
-        self.relevance_cache = RelevanceCache(ttl_seconds=3600)
         prompts_path = Path(__file__).parent.parent / "configs/prompts.yaml"
         with open(prompts_path, "r") as f:
             self.prompts = yaml.safe_load(f)
-        self._last_tokens = 0
 
-    async def _call_openrouter(self, prompt: str) -> str:
-        timeout = aiohttp.ClientTimeout(total=self.openrouter_timeout)
+    async def _call_external(self, messages: List[dict]) -> str:
+        timeout = aiohttp.ClientTimeout(total=self.external_timeout)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             headers = {
-                "Authorization": f"Bearer {self.openrouter_api_key}",
+                "Authorization": f"Bearer {self.external_api_key}",
                 "Content-Type": "application/json",
             }
             payload = {
-                "model": self.openrouter_model,
-                "messages": [{"role": "user", "content": prompt}],
+                "model": self.external_model,
+                "messages": messages,
                 "temperature": 0.0,
-                "max_tokens": self.openrouter_max_tokens,
+                "max_tokens": self.external_max_tokens,
             }
+            url = f"{self.external_api_base_url}/chat/completions"
             async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
+                url,
                 headers=headers,
                 json=payload,
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     usage = data.get("usage", {})
-                    self._last_tokens = usage.get("total_tokens", 0)
                     logger.info(
-                        f"OpenRouter токены: prompt={usage.get('prompt_tokens')}, "
-                        f"completion={usage.get('completion_tokens')}, total={self._last_tokens}"
+                        f"External API токены: prompt={usage.get('prompt_tokens')}, "
+                        f"completion={usage.get('completion_tokens')}, total={usage.get('total_tokens')}"
                     )
                     return data["choices"][0]["message"]["content"]
                 else:
                     error_text = await resp.text()
-                    logger.error(f"OpenRouter error: {resp.status} - {error_text}")
-                    raise Exception(f"OpenRouter API error: {resp.status}")
+                    logger.error(f"External API error: {resp.status} - {error_text}")
+                    raise Exception(f"External API error: {resp.status}")
 
-    async def _call_local(
-        self, prompt: str, grammar: Optional[LlamaGrammar] = None
-    ) -> str:
-        if not self.local_llm:
-            raise RuntimeError("Локальная модель не загружена")
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: self.local_llm.create_chat_completion(
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=self.openrouter_max_tokens,
-                temperature=0.0,
-                grammar=grammar,
-            ),
-        )
-        self._last_tokens = 0
-        return result["choices"][0]["message"]["content"]
-
-    async def generate(
-        self, prompt: str, grammar: Optional[LlamaGrammar] = None
-    ) -> str:
-        if self.llm_preference == "openrouter_only":
-            if not self.openrouter_api_key:
-                raise RuntimeError(
-                    "LLM_PREFERENCE=openrouter_only, но OPENROUTER_API_KEY не задан"
+    async def _call_local_with_retry(self, payload: dict) -> str:
+        last_exception = None
+        for attempt in range(1, self.local_retries + 1):
+            try:
+                timeout = aiohttp.ClientTimeout(total=self.local_server_timeout)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    url = f"{self.local_server_url}/v1/chat/completions"
+                    async with session.post(
+                        url,
+                        json=payload,
+                        headers={"Content-Type": "application/json"},
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            content = data["choices"][0]["message"]["content"]
+                            if not content or not content.strip():
+                                logger.warning("Локальный сервер вернул пустой ответ")
+                            return content.strip()
+                        else:
+                            error_text = await resp.text()
+                            logger.error(
+                                f"Локальный сервер ошибка (попытка {attempt}): {resp.status} - {error_text}"
+                            )
+                            raise Exception(f"Local server error: {resp.status}")
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                last_exception = e
+                logger.warning(
+                    f"Ошибка соединения с локальным сервером (попытка {attempt}): {e}"
                 )
-            return await self._call_openrouter(prompt)
+                if attempt < self.local_retries:
+                    wait = 2**attempt
+                    logger.info(f"Повтор через {wait} секунд...")
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(
+                        f"Все {self.local_retries} попыток к локальному серверу не удались"
+                    )
+                    raise RuntimeError(
+                        f"Не удалось получить ответ от локального сервера: {last_exception}"
+                    )
+        raise RuntimeError("Неизвестная ошибка при вызове локального сервера")
+
+    async def _call_local(self, messages: List[dict]) -> str:
+        if not self.local_available:
+            raise RuntimeError("Локальный сервер не настроен")
+
+        payload = {
+            "model": "default",
+            "messages": messages,
+            "max_tokens": self.local_max_tokens,
+            "temperature": 0.0,
+            "repeat_penalty": self.repeat_penalty,
+            "stop": self.stop_tokens if self.stop_tokens else [],
+        }
+        return await self._call_local_with_retry(payload)
+
+    async def generate(self, system_instruction: str, user_prompt: str) -> str:
+        messages = [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        if self.llm_preference == "external_only":
+            if not self.external_api_key:
+                raise RuntimeError(
+                    "LLM_PREFERENCE=external_only, но EXTERNAL_API_KEY не задан"
+                )
+            return await self._call_external(messages)
+
         elif self.llm_preference == "local":
-            if not self.local_llm:
+            if not self.local_available:
                 raise RuntimeError(
-                    "LLM_PREFERENCE=local, но локальная модель не загружена"
+                    "LLM_PREFERENCE=local, но локальный сервер недоступен"
                 )
-            return await self._call_local(prompt, grammar)
+            return await self._call_local(messages)
+
         else:
-            if self.openrouter_api_key:
+            if self.external_api_key:
                 try:
-                    return await self._call_openrouter(prompt)
+                    return await self._call_external(messages)
                 except Exception as e:
                     logger.warning(
-                        f"OpenRouter failed: {e}, falling back to local model"
+                        f"External API failed: {e}, falling back to local server"
                     )
-                    if self.local_llm:
-                        return await self._call_local(prompt, grammar)
+                    if self.local_available:
+                        return await self._call_local(messages)
                     else:
                         raise RuntimeError(
-                            "OpenRouter недоступен, а локальная модель не загружена"
+                            "External API недоступен, а локальный сервер не настроен"
                         )
             else:
-                logger.warning(
-                    "OPENROUTER_API_KEY не задан, используем локальную модель"
-                )
-                if self.local_llm:
-                    return await self._call_local(prompt, grammar)
+                logger.warning("EXTERNAL_API_KEY не задан, используем локальный сервер")
+                if self.local_available:
+                    return await self._call_local(messages)
                 else:
-                    raise RuntimeError("Ни OpenRouter, ни локальная модель недоступны")
+                    raise RuntimeError(
+                        "Ни External API, ни локальный сервер недоступны"
+                    )
 
-    async def is_relevant(self, text: str) -> bool:
-        cached = self.relevance_cache.get(text)
-        if cached is not None:
-            return cached
-        prompt = self.prompts["relevance_prompt"].format(text=text[:2000])
-        grammar = (
-            LlamaGrammar.from_string(boolean_grammar()) if self.local_llm else None
-        )
-        answer = await self.generate(prompt, grammar=grammar)
-        relevant = answer.strip().lower() == "true"
-        self.relevance_cache.set(text, relevant)
-        return relevant
-
-    async def summarize(self, text: str) -> str:
-        prompt = self.prompts["summary_prompt"].format(text=text[:3000])
-        return await self.generate(prompt)
-
-    async def create_digest(self, summaries: list) -> str:
-        prompt = self.prompts["digest_prompt"].format(summaries="\n\n".join(summaries))
-        return await self.generate(prompt)
-
-    async def verify_summary(self, summary: str) -> str:
-        prompt = self.prompts["verify_prompt"].format(summary=summary)
-        return await self.generate(prompt)
-
-    async def highlight_key_elements(self, text: str) -> str:
-        prompt = self.prompts["highlight_prompt"].format(text=text)
-        return await self.generate(prompt)
-
-    async def determine_category(self, text: str) -> str:
-        prompt = self.prompts["category_prompt"].format(text=text)
-        grammar = (
-            LlamaGrammar.from_string(category_grammar()) if self.local_llm else None
-        )
-        return (await self.generate(prompt, grammar=grammar)).strip()
-
-    async def assess_significance(self, text: str) -> str:
-        prompt = self.prompts["significance_prompt"].format(text=text)
-        grammar = (
-            LlamaGrammar.from_string(significance_grammar()) if self.local_llm else None
-        )
-        return (await self.generate(prompt, grammar=grammar)).strip()
-
-    async def find_duplicates(self, summaries: List[str]) -> List[List[int]]:
-        if not summaries:
-            return []
-        prompt = self.prompts["dedup_prompt"].format(summaries="\n".join(summaries))
-        grammar = (
-            LlamaGrammar.from_string(duplicate_groups_grammar())
-            if self.local_llm
-            else None
-        )
-        response = await self.generate(prompt, grammar=grammar)
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            return []
+    async def generate_digest_from_raw(self, contents: List[Dict]) -> str:
+        MAX_SOURCES = 30
+        MAX_TEXT_LEN = 1500
+        selected = contents[:MAX_SOURCES]
+        formatted = []
+        for idx, item in enumerate(selected, 1):
+            title = item.get("title", "Без заголовка")[:100]
+            text = item.get("text", "")[:MAX_TEXT_LEN]
+            date = item.get("date", "")
+            url = item.get("url", "#")
+            image = item.get("image", "")
+            image_line = f"{image}" if image else "Картинки нет :("
+            formatted.append(
+                f"Источник {idx}:\n"
+                f"Заголовок: {title}\n"
+                f"Дата: {date}\n"
+                f"Ссылка: {url}\n"
+                f"{image_line}\n"
+                f"Текст:\n{text}\n"
+                "---"
+            )
+        combined = "\n\n".join(formatted)
+        system = self.prompts["system_prompt"]
+        user = self.prompts["digest_from_raw_prompt"].format(sources=combined)
+        return await self.generate(system, user)
