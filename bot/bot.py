@@ -5,7 +5,7 @@ from pathlib import Path
 from aiogram.filters import Command, CommandObject
 from aiogram import Bot, Dispatcher, html
 from aiogram.client.default import DefaultBotProperties
-from aiogram.types import Message, InlineKeyboardButton
+from aiogram.types import Message
 from aiogram.enums import ParseMode
 from dotenv import load_dotenv
 from json import load
@@ -37,7 +37,7 @@ class NewsDigestBot:
             api_key=getenv("UNISENDER_API_KEY"),
             sender_email=getenv("UNISENDER_SENDER_EMAIL"),
             sender_name=getenv("UNISENDER_SENDER_NAME"),
-            list_id=int(getenv("UNISENDER_LIST_ID"))
+            list_id=int(getenv("UNISENDER_LIST_ID")),
         )
         self._register_handlers()
 
@@ -47,7 +47,9 @@ class NewsDigestBot:
         self.dp.message.register(self.cmd_status, Command("status"))
         self.dp.message.register(self.cmd_digest_now, Command("digest_now"))
         self.dp.message.register(self.cmd_subscribe_email, Command("subscribe_email"))
-        self.dp.message.register(self.cmd_unsubscribe_email, Command("unsubscribe_email"))
+        self.dp.message.register(
+            self.cmd_unsubscribe_email, Command("unsubscribe_email")
+        )
         self.dp.message.register(self.cmd_get_emails, Command("get_emails"))
         self.dp.message.register(self.cmd_check_email, Command("check_email"))
 
@@ -109,61 +111,84 @@ class NewsDigestBot:
     async def cmd_subscribe_email(self, message: Message, command: CommandObject):
         """Подписка email на дайджест"""
         if not command.args or not EMAIL_REGEX.match(command.args.strip()):
-            await message.answer("❌ Использование: <code>/subscribe_email test@example.com</code>")
+            await message.answer(
+                "❌ Использование: <code>/subscribe_email test@example.com</code>"
+            )
             return
 
         email = command.args.strip().lower()
         await message.answer("⏳ Добавление контакта в Unisender...")
-        
+
         res = await self.unisender.subscribe(email)
-        
+
         if res["success"]:
-            await message.answer(f"✅ Email <code>{email}</code> пришло подтверждение получения рассылки!")
+            await message.answer(
+                f"✅ Email <code>{email}</code> пришло подтверждение получения рассылки!"
+            )
         else:
-            await message.answer(f"❌ Ошибка Unisender: <code>{res.get('error')}</code>")
+            await message.answer(
+                f"❌ Ошибка Unisender: <code>{res.get('error')}</code>"
+            )
 
     async def cmd_unsubscribe_email(self, message: Message, command: CommandObject):
         """Отписка email от дайджеста"""
         if not command.args:
-            await message.answer("❌ Использование: <code>/unsubscribe_email test@example.com</code>")
+            await message.answer(
+                "❌ Использование: <code>/unsubscribe_email test@example.com</code>"
+            )
+
             return
 
         email = command.args.strip().lower()
         await message.answer("⏳ Удаление контакта из Unisender...")
-        
         res = await self.unisender.unsubscribe(email)
-        
+
         if res["success"]:
             await message.answer(f"🚫 Email <code>{email}</code> успешно отписан.")
         else:
-            await message.answer(f"❌ Ошибка Unisender: <code>{res.get('error')}</code>")
+            await message.answer(
+                f"❌ Ошибка Unisender: <code>{res.get('error')}</code>"
+            )
 
     async def cmd_check_email(self, message: Message, command: CommandObject):
         """Проверить привязан ли заданный email"""
         if not command.args or not EMAIL_REGEX.match(command.args.strip()):
-            await message.answer("❌ Использование: <code>/cmd_check_email test@example.com</code>")
+            await message.answer(
+                "❌ Использование: <code>/cmd_check_email test@example.com</code>"
+            )
             return
 
         email = command.args.strip().lower()
-        await message.answer(f"⏳ Проверяю статус email <code>{email}</code> в Unisender...")
+        await message.answer(
+            f"⏳ Проверяю статус email <code>{email}</code> в Unisender..."
+        )
 
         status = await self.unisender.check_email_in_unisender_list(email)
 
         if status == "True":
-            await message.answer(f"📋 Email <code>{email}</code> <b>активен</b> в списке рассылки.")
+            await message.answer(
+                f"📋 Email <code>{email}</code> <b>активен</b> в списке рассылки."
+            )
         elif status == "False":
-            await message.answer(f"🚫 Email <code>{email}</code> <b>не найден</b> в базе рассылки.")
+            await message.answer(
+                f"🚫 Email <code>{email}</code> <b>не найден</b> в базе рассылки."
+            )
         else:
-            await message.answer(f"❌ Произошла ошибка... Повторите позже")
+            await message.answer("❌ Произошла ошибка... Повторите позже")
 
     async def cmd_get_emails(self, message: Message):
         """Получить все почты задействованные в рассылке с авторазбиением"""
-        await message.answer("⏳ Запрашиваю генерацию и выгрузку списка контактов из Unisender (это может занять около 5-10 секунд)...")
+        await message.answer(
+            "⏳ Запрашиваю генерацию и выгрузку списка контактов из Unisender (это может занять около 5-10 секунд)..."
+        )
 
         emails = await self.unisender.get_registered_emails()
-        
+
         if not emails:
-            await message.answer("📋 В списке рассылки Unisender нет активных подписчиков (или они ещё не обработаны).")
+            await message.answer(
+                "📋 В списке рассылки Unisender нет активных подписчиков (или они ещё не обработаны)."
+            )
+
             return
 
         header_text = f"📋 <b>Всего активных подписчиков: {len(emails)}</b>\n\n"
@@ -175,7 +200,7 @@ class NewsDigestBot:
             if idx % PAGE_SIZE == 0 or idx == len(emails):
                 await message.answer(current_chunk)
                 current_chunk = ""
-    
+
     async def start(self):
         print("Бот запущен и слушает команды...")
         await self.dp.start_polling(self.bot)

@@ -2,51 +2,20 @@ TELEGRAM_CHANNELS = [
     "allbiometrics",
     "biometria_rf",
     "ict_moscow_ai",
+    "ai_machinelearning_big_data",
+    "gonzo_ML",
+    "boris_again",
+    "habr_ai",
+    "ai_machinelearning_big_data",
+    "face_detection",
 ]
 
 DAYS_BACK = 7
-MAX_POSTS_PER_CHANNEL = 50
+MAX_POSTS_PER_CHANNEL = 5
 
-KEYWORDS = [
-    "биометрия",
-    "CV",
-    "распознавание лиц",
-    "видеоаналитика",
-    "DeepFake",
-    "цифровая идентификация",
-    "Liveness",
-    "face recognition",
-    "572-ФЗ",
-    "303-ФЗ",
-    "ЕБС",
-    "NtechLab",
-    "Tevian",
-    "3DiVi",
-    "RecFaces",
-    "VizorLabs",
-    "Vocord",
-    "Macroscop",
-    "Центр Речевых Технологий",
-    "BIOSMART",
-    "Интеллоджик",
-    "Intelligent Security Systems",
-    "MTS AI",
-]
+MAX_SOURCES = 40
+MAX_LINKS_PER_POST = 3
+MAX_TEXT_LEN = 3000
 
-CATEGORIES = [
-    "Биометрия",
-    "Компьютерное зрение",
-    "Видеоаналитика",
-    "DeepFake",
-    "Законодательство",
-    "Безопасность",
-    "Цифровое ID",
-    "Рынок",
-    "Другое",
-]
-
-MAX_TOP_ARTICLES = 10
-MAX_EXTRA_ARTICLES = 10
 MAX_CONCURRENT_FETCHES = 5
-
 STATUS_FILE = "configs/bot_status.json"
