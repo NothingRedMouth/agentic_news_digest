@@ -1,4 +1,4 @@
-<img width="13620" height="1782" alt="flowchart" src="https://github.com/user-attachments/assets/b5d9ded6-ae34-42dc-a928-67a8d355adea" /><img width="13620" height="1782" alt="flowchart" src="https://github.com/user-attachments/assets/30007ea1-2def-4f9f-8498-02ab061dab4e" /># NewsDigest AI Agent
+# NewsDigest AI Agent
 
 ### Система автоматического сбора новостей из Telegram-каналов, генерации дайджеста через LLM и публикации в Telegram, Telegra.ph и email-рассылке (Unisender).
 #### Быстрый запуск
