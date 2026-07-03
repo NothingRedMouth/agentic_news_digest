@@ -1,2 +1,6 @@
 models
 venv
+.env
+__pycache__/
+credentials/
+*.session

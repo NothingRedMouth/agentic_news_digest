@@ -1,0 +1,53 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq
+    network_mode: host
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: password
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+
+  llama-server:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: llama-server
+    network_mode: host
+    command: >
+      -m /models/gemma-4-31B-it-UD-Q4_K_XL.gguf
+      -c 25000
+      --flash-attn on
+      --parallel 1
+      --frequency-penalty 0.0
+      --presence-penalty 0.0
+      --host 0.0.0.0
+      --port 8080
+    volumes:
+      - ./models:/models
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  app:
+    build: .
+    container_name: news-digest-app
+    network_mode: host
+    depends_on:
+      - rabbitmq
+      - llama-server
+    env_file:
+      - .env
+    volumes:
+      - ./configs:/app/configs
+      - ./logs:/app/logs
+      - ./credentials:/app/credentials
+    restart: unless-stopped
+
+volumes:
+  rabbitmq_data:
