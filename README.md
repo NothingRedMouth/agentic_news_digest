@@ -4,7 +4,8 @@
 
 #### Архитектура системы
 
-<img width="5887" height="3748" alt="architecture" src="https://github.com/user-attachments/assets/cc15a263-c762-45b7-9e0d-4e84301ce17e" />
+<img width="5331" height="3590" alt="architecture" src="https://github.com/user-attachments/assets/7ff6e389-e055-43d6-985f-44b07d857ad4" />
+
 
 #### Быстрый запуск
 1. Подготовка окружения
