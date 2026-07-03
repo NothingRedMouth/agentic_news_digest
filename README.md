@@ -1,6 +1,11 @@
 # NewsDigest AI Agent
 
 ### Система автоматического сбора новостей из Telegram-каналов, генерации дайджеста через LLM и публикации в Telegram, Telegra.ph и email-рассылке (Unisender).
+
+#### Архитектура системы
+
+<img width="5887" height="3748" alt="architecture" src="https://github.com/user-attachments/assets/cc15a263-c762-45b7-9e0d-4e84301ce17e" />
+
 #### Быстрый запуск
 1. Подготовка окружения
 
