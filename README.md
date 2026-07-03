@@ -99,7 +99,8 @@
 
 ## Схематичное представление основных компонентов:
 
-<img width="4179" height="5245" alt="flowchart" src="https://github.com/user-attachments/assets/256a141b-e275-47a3-9b30-8fd7f404a9e9" />
+<img width="4179" height="5245" alt="flowchart" src="https://github.com/user-attachments/assets/f8b63ccd-6b43-4df0-aea9-871547822e2a" />
+
 
 
 ## Запуск без Docker (для разработки)
